@@ -1,0 +1,13 @@
+[Unit]
+Description=Flask App
+After=network.target
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/flask_app
+ExecStart=/usr/bin/python3 /home/ec2-user/flask_app/app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
