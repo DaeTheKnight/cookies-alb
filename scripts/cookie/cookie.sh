@@ -1,40 +1,29 @@
 #!/bin/bash
 
-# Update system packages and install Python and needed dependencies 
-yum update -y
-yum install -y python3 python3-pip
-sudo pip3 install flask requests
+# Update system packages and install Python3 and pip 
+yum update -y  
+yum install -y python3 python3-pip  
 
-# Create a systemd service file for the Flask app
-cat > /etc/systemd/system/flask_app.service <<EOF
-[Unit]
-Description=Flask App
-After=network.target
+# Install Flask and requests libraries for the web application
+sudo pip3 install flask requests 
 
-[Service]
-User=ec2-user
-Group=ec2-user
-WorkingDirectory=/home/ec2-user/flask_app
-ExecStart=/usr/bin/python3 /home/ec2-user/flask_app/app.py
-Restart=always
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Create the directory for the Flask application files
+mkdir -p /home/ec2-user/flask_app  
 
-# Create Flask app directory
-mkdir -p /home/ec2-user/flask_app
-
-# Create the Flask app file with the provided content
+# Create the main Flask app file with the provided application code
 cat << 'EOF' > /home/ec2-user/flask_app/app.py
 from flask import Flask, make_response, render_template_string, request
-import random
-import requests
+import random  
+import requests  
 
+# Initialize a new Flask application
 app = Flask(__name__)
 
-# List of image URLs to be displayed
+# URL of a "safe" image that always displays on the first visit
 safe_image = "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/71b3fa9f-8e3d-40a8-9cbf-944b67456c7a/width=450/workspace_images_602915968439572669_e7d9dcaa093bec1629692861fd9f4e57.jpeg"
+
+# Additional images to display randomly on subsequent visits
 images = [
     "https://upload.wikimedia.org/wikipedia/commons/2/2f/Glasto2023_%28181_of_468%29_%2853009327490%29_%28cropped%29.jpg",
     "https://c8.alamy.com/comp/2NGKBH1/oslo-norway-17th-feb-2023-the-american-rapper-and-singer-lizzo-performs-a-live-concert-at-oslo-spektrum-in-oslo-photo-credit-gonzales-photoalamy-live-news-2NGKBH1.jpg",
@@ -44,22 +33,25 @@ images = [
 
 @app.route('/')
 def index():
-    # Fetch instance metadata from the EC2 instance metadata service
+    # Generate a token to securely access EC2 instance metadata
     token = requests.put("http://169.254.169.254/latest/api/token", headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"}).text
+
+    # Fetch metadata for the instance's local IP, availability zone, MAC address, and VPC ID
     local_ipv4 = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4", headers={"X-aws-ec2-metadata-token": token}).text
     az = requests.get("http://169.254.169.254/latest/meta-data/placement/availability-zone", headers={"X-aws-ec2-metadata-token": token}).text
     macid = requests.get("http://169.254.169.254/latest/meta-data/network/interfaces/macs/", headers={"X-aws-ec2-metadata-token": token}).text.strip()
     vpc = requests.get(f"http://169.254.169.254/latest/meta-data/network/interfaces/macs/{macid}/vpc-id", headers={"X-aws-ec2-metadata-token": token}).text
+    hostname = requests.get("http://169.254.169.254/latest/meta-data/hostname", headers={"X-aws-ec2-metadata-token": token}).text
 
-    # Determine which image to display based on whether the user has visited before
+    # Determine which image to display based on the user's visit history
     if request.cookies.get("visited"):
-        # If the user has visited, choose a random image from the list (excluding the safe image)
+        # Select a random image from the list (excluding the safe image) for returning visitors
         img_url = random.choice(images[1:])
     else:
-        # If the user is visiting for the first time, display the safe image
+        # Show the safe image for first-time visitors
         img_url = safe_image
 
-    # Create the HTML response to be returned to the client
+    # Render an HTML response with instance metadata and the chosen image
     resp = make_response(render_template_string(f"""
     <!doctype html>
     <html lang="en" class="h-100">
@@ -75,7 +67,7 @@ def index():
     <img src="{img_url}" alt="Random Image" style="width: 100%; height: auto;">
     <br>
 
-    <p><b>Instance Name:</b> {{ hostname }}</p>
+    <p><b>Instance Name:</b> {hostname}</p>
     <p><b>Instance Private Ip Address: </b> {local_ipv4}</p>
     <p><b>Availability Zone: </b> {az}</p>
     <p><b>Virtual Private Cloud (VPC):</b> {vpc}</p>
@@ -84,18 +76,19 @@ def index():
     </html>
     """))
 
-    # Set a cookie to track if the user has visited before
+    # Set a "visited" cookie to recognize returning visitors, lasting one year
     if not request.cookies.get("visited"):
-        # If this is the user's first visit, set a cookie that lasts for one year
         resp.set_cookie("visited", "1", max_age=60*60*24*365)
 
     return resp
 
 if __name__ == "__main__":
-    # Run the Flask app on all available interfaces, listening on port 80
+    # Run the Flask app on all available network interfaces, listening on port 80
     app.run(host="0.0.0.0", port=80)
+
 EOF
 
-# Start and enable the Flask app service
-sudo systemctl start flask_app
-sudo systemctl enable flask_app
+# Run the Flask application in the background, allowing the server to keep running independently
+# of the user session. 'nohup' prevents the process from stopping if the session ends,
+# and '&' places it in the background so other commands can run concurrently.
+sudo nohup python3 /home/ec2-user/flask_app/app.py &

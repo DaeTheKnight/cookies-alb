@@ -21,7 +21,9 @@ def index():
     az = requests.get("http://169.254.169.254/latest/meta-data/placement/availability-zone", headers={"X-aws-ec2-metadata-token": token}).text
     macid = requests.get("http://169.254.169.254/latest/meta-data/network/interfaces/macs/", headers={"X-aws-ec2-metadata-token": token}).text.strip()
     vpc = requests.get(f"http://169.254.169.254/latest/meta-data/network/interfaces/macs/{macid}/vpc-id", headers={"X-aws-ec2-metadata-token": token}).text
+    hostname = requests.get("http://169.254.169.254/latest/meta-data/hostname", headers={"X-aws-ec2-metadata-token": token}).text
 
+    
     # Determine which image to display
     if request.cookies.get("visited"):
         img_url = random.choice(images[1:])
@@ -44,7 +46,7 @@ def index():
     <img src="{img_url}" alt="Random Image" style="width: 100%; height: auto;">
     <br>
 
-    <p><b>Instance Name:</b> {{ hostname }}</p>
+    <p><b>Instance Name:</b> {hostname}</p>
     <p><b>Instance Private Ip Address: </b> {local_ipv4}</p>
     <p><b>Availability Zone: </b> {az}</p>
     <p><b>Virtual Private Cloud (VPC):</b> {vpc}</p>
